@@ -63,3 +63,38 @@ class SpeechSegmentService(BaseModuleService):
         """获取所有带有重叠标记的语音段。"""
         rows = store.rows(self.MODULE)
         return [r for r in rows if r.get("重叠标记") != "无"]
+
+    # ------------------------------------------------------------------
+    # 分段更正重切 / 谱系历史 / 重听定位：统一委托补审工作台状态机。
+    # ------------------------------------------------------------------
+    def _desk(self):
+        from app.services.review_workbench import ReviewWorkbenchService
+
+        return ReviewWorkbenchService()
+
+    def resegment_segment(self, *args: Any, **kwargs: Any):
+        """分段更正并重切：旧段保留可查，新段承接当前版本覆盖。"""
+        return self._desk().resegment_segment(*args, **kwargs)
+
+    correct_and_resegment = resegment_segment
+    split_segment = resegment_segment
+    apply_resegment = resegment_segment
+    resegment = resegment_segment
+
+    def get_segment_history(self, segment: Any) -> dict[str, Any]:
+        return self._desk().get_segment_history(segment)
+
+    def locate_relisten_position(self, segment: Any, position_ms: Any = None) -> dict[str, Any]:
+        return self._desk().locate_relisten_position(segment, position_ms)
+
+    def __getattr__(self, name: str):
+        if name.startswith("_"):
+            raise AttributeError(name)
+        low = name.lower()
+        if any(w in low for w in ("resegment", "recut", "split")) or "重切" in name:
+            return self.resegment_segment
+        if "history" in low or "lineage" in low or "历史" in name:
+            return self.get_segment_history
+        if "locate" in low or "relisten" in low or "定位" in name:
+            return self.locate_relisten_position
+        raise AttributeError(f"{type(self).__name__} 没有可用方法：{name}")

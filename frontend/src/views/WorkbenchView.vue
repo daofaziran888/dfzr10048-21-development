@@ -6,6 +6,14 @@
         <p class="page-desc">{{ meta.desc }}</p>
       </div>
       <div class="page-actions">
+        <RouterLink
+          v-if="meta.key === 'confidence_review'"
+          class="btn primary"
+          data-testid="open-review-workbench"
+          to="/review_workbench"
+        >
+          打开补审工作台（按版本领段）
+        </RouterLink>
         <button class="btn primary" data-testid="open-create" type="button" @click="openCreate">
           登记{{ meta.entity }}
         </button>

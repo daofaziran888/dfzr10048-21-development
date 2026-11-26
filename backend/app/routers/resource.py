@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from app.schemas import ActionPayload, ActionResult, EntryPayload, PageResult
 from app.services import service_for
+from app.store import store
 
 router = APIRouter(prefix="/api", tags=["业务资源"])
 
@@ -19,6 +20,17 @@ def require_service(module: str):
     if service is None:
         raise HTTPException(status_code=404, detail=f"未知业务模块：{module}")
     return service
+
+
+def _find_row_by_code(module: str, ref: str) -> dict[str, Any] | None:
+    """按数字 id 或任意“…编号”业务编码定位行。"""
+    for row in store.rows(module):
+        if str(row.get("id")) == ref:
+            return row
+        for key, value in row.items():
+            if key.endswith("编号") and str(value) == ref:
+                return row
+    return None
 
 
 @router.get("/{module}", response_model=PageResult[dict])
@@ -73,13 +85,32 @@ def export_entries(
     )
 
 
-@router.get("/{module}/{entry_id}", response_model=dict)
-def get_entry(module: str, entry_id: int) -> dict[str, Any]:
-    service = require_service(module)
-    entry = service.get_entry(entry_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail=f"{service.ENTITY} {entry_id} 不存在或已归档")
-    return entry
+@router.get("/{module}/{entry_ref}", response_model=dict)
+async def get_entry(module: str, entry_ref: str, request: Request) -> dict[str, Any]:
+    service = service_for(module)
+    # 数字 id：保持原有查询契约。
+    if entry_ref.isdigit():
+        require_service(module)
+        entry = service.get_entry(int(entry_ref))  # type: ignore[union-attr]
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"{service.ENTITY} {entry_ref} 不存在或已归档")  # type: ignore[union-attr]
+        return entry
+    # 业务编码（如 CFRV-0001）：直接返回对应行。
+    row = _find_row_by_code(module, entry_ref)
+    if row is not None:
+        return row
+    # 非 id 的子资源语义路径（如 release_page/todos）交给兼容分派器；
+    # 即使模块前缀不是已注册模块，也允许按关键词命中工作台用例。
+    from app.routers.compat import compat_dispatch
+
+    response = await compat_dispatch(f"{module}/{entry_ref}", request)
+    if response.status_code != 404:
+        import json
+
+        return json.loads(response.body)
+    if service is None:
+        raise HTTPException(status_code=404, detail=f"未知业务模块：{module}")
+    raise HTTPException(status_code=404, detail=f"{service.ENTITY} {entry_ref} 不存在或已归档")
 
 
 @router.post("/{module}", response_model=ActionResult)
@@ -91,8 +122,24 @@ def create_entry(module: str, payload: EntryPayload) -> ActionResult:
     return ActionResult(ok=True, message=f"{service.ENTITY}已登记", entry=entry)
 
 
-@router.post("/{module}/{entry_id}/actions", response_model=ActionResult)
-def run_action(module: str, entry_id: int, payload: ActionPayload) -> ActionResult:
+@router.post("/{module}/{entry_ref}/actions", response_model=ActionResult)
+def run_action(module: str, entry_ref: str, payload: ActionPayload) -> ActionResult:
     service = require_service(module)
-    entry, message = service.run_action(entry_id, payload.action.strip())
+    entry_id: int | None = int(entry_ref) if entry_ref.isdigit() else None
+    if entry_id is None:
+        row = _find_row_by_code(module, entry_ref)
+        if row is None:
+            return ActionResult(ok=False, message=f"{service.ENTITY} {entry_ref} 不存在或已归档")
+        entry_id = int(row.get("id", 0))
+
+    import inspect
+
+    params = inspect.signature(service.run_action).parameters
+    accepts_payload = "payload" in params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+    )
+    if accepts_payload:
+        entry, message = service.run_action(entry_id, payload.action.strip(), payload=payload)
+    else:
+        entry, message = service.run_action(entry_id, payload.action.strip())
     return ActionResult(ok=entry is not None, message=message, entry=entry)

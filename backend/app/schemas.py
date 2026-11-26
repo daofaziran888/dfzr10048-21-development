@@ -3,7 +3,15 @@ from __future__ import annotations
 
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ActionPayload(BaseModel):
+    # 工作台动作可能携带 reviewer/conclusion/version 等附加字段，允许透传给服务层。
+    model_config = ConfigDict(extra="allow")
+
+    action: str
+    remark: str | None = None
 
 T = TypeVar("T")
 
@@ -23,9 +31,4 @@ class ActionResult(BaseModel):
 
 class EntryPayload(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
-    remark: str | None = None
-
-
-class ActionPayload(BaseModel):
-    action: str
     remark: str | None = None

@@ -59,3 +59,78 @@ export async function loadOverview(): Promise<OverviewResult> {
   if (!response.ok) throw new Error('运营概览读取失败')
   return await response.json()
 }
+
+// ===== 置信复核补审工作台 =================================================
+
+export type WorkbenchResult = {
+  version: string
+  items: EntryRow[]
+  missing: EntryRow[]
+  reviewing: EntryRow[]
+  rejected: EntryRow[]
+  passed: EntryRow[]
+  missing_count: number
+  reviewing_count: number
+  rejected_count: number
+  passed_count: number
+  [key: string]: unknown
+}
+
+export async function fetchWorkbench(version: string): Promise<WorkbenchResult> {
+  const query = new URLSearchParams({ version }).toString()
+  const response = await request(`/api/review-workbench?${query}`)
+  if (!response.ok) throw new Error('补审工作台读取失败')
+  return await response.json()
+}
+
+export async function postWorkbenchAction(
+  path: 'claim' | 'submit' | 'resegment',
+  body: Record<string, unknown>,
+): Promise<ActionResult & Record<string, unknown>> {
+  const response = await request(`/api/review-workbench/${path}`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  return await response.json()
+}
+
+export async function fetchEligibility(version: string): Promise<Record<string, any>> {
+  const query = new URLSearchParams({ version }).toString()
+  const response = await request(`/api/release?${query}`)
+  if (!response.ok) throw new Error('发布资格核验失败')
+  return await response.json()
+}
+
+export async function fetchSegmentHistory(segment: string): Promise<Record<string, any>> {
+  const query = new URLSearchParams({ segment }).toString()
+  const response = await request(`/api/review-workbench/history?${query}`)
+  if (!response.ok) throw new Error('分段历史读取失败')
+  return await response.json()
+}
+
+export async function writeOffAppeal(
+  appealRef: string,
+  body: Record<string, unknown> = {},
+): Promise<ActionResult & Record<string, unknown>> {
+  const response = await request(`/api/dictation_appeal/${appealRef}/write-off`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  return await response.json()
+}
+
+export async function continueAppeal(
+  appealRef: string,
+): Promise<ActionResult & Record<string, unknown>> {
+  const response = await request(`/api/dictation_appeal/${appealRef}/continue`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+  return await response.json()
+}
+
+export async function locateAppeal(appealRef: string): Promise<Record<string, any>> {
+  const response = await request(`/api/dictation_appeal/${appealRef}/locate`)
+  if (!response.ok) throw new Error('重听定位失败')
+  return await response.json()
+}

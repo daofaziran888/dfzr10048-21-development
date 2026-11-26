@@ -14,6 +14,15 @@ from app.services.timeline_mark import TimelineMarkService
 from app.services.term_extract import TermExtractService
 from app.services.transcript_version import TranscriptVersionService
 from app.services.confidence_review import ConfidenceReviewService
+from app.services.review_workbench import ReviewWorkbenchService
+from app.services.dictation_appeal import DictationAppealService, AppealService
+from app.services.review_claim import ReviewClaimService
+from app.services.supplement_review import (
+    BackfillReviewService as BackfillReviewSvc,
+    SupplementReviewService,
+)
+from app.services.release_service import ReleaseEligibilityService
+from app.services.review_todo import ReviewTodoService
 from app.services.correction_loop import CorrectionLoopService
 from app.services.subtitle_pack import SubtitlePackService
 from app.services.media_index import MediaIndexService
@@ -38,6 +47,17 @@ SERVICES: dict[str, BaseModuleService] = {
     "term_extract": TermExtractService(),
     "transcript_version": TranscriptVersionService(),
     "confidence_review": ConfidenceReviewService(),
+    "review_workbench": ReviewWorkbenchService(),
+    "review_desk": ReviewWorkbenchService(),
+    "dictation_appeal": DictationAppealService(),
+    "dictation_appeals": DictationAppealService(),
+    "appeal": AppealService(),
+    "appeals": AppealService(),
+    "review_claim": ReviewClaimService(),
+    "supplement_review": SupplementReviewService(),
+    "backfill_review": BackfillReviewSvc(),
+    "review_todo": ReviewTodoService(),
+    "release_eligibility": ReleaseEligibilityService(),
     "correction_loop": CorrectionLoopService(),
     "subtitle_pack": SubtitlePackService(),
     "media_index": MediaIndexService(),

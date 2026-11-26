@@ -69,3 +69,73 @@ class TranscriptVersionService(BaseModuleService):
         vers = [r for r in rows if r.get("关联任务") == task_id]
         vers.sort(key=lambda r: r.get("版本号", "v0"))
         return vers
+
+    # ------------------------------------------------------------------
+    # 发布资格：委托补审工作台核验“当前覆盖”的签名完整性。
+    # 局部导入避免模块加载期的循环依赖。
+    # ------------------------------------------------------------------
+    def _desk(self):
+        from app.services.review_workbench import ReviewWorkbenchService
+
+        return ReviewWorkbenchService()
+
+    def _version_token(self, entry_or_token: Any) -> str:
+        if isinstance(entry_or_token, dict):
+            return str(entry_or_token.get("版本号") or entry_or_token.get("版本编号") or "")
+        entry = self.get_entry(int(entry_or_token)) if isinstance(entry_or_token, int) else None
+        if entry is not None:
+            return str(entry.get("版本号") or entry.get("版本编号") or "")
+        return str(entry_or_token)
+
+    def release_eligibility(self, version: Any = None, **kwargs: Any) -> dict[str, Any]:
+        """核验版本发布资格（只认当前切分覆盖上的受理通过签名）。"""
+        token = version
+        if token is None and kwargs.get("entry_id") is not None:
+            token = self._version_token(kwargs["entry_id"])
+        return self._desk().release_eligibility(token, **kwargs)
+
+    check_release_eligibility = release_eligibility
+    verify_release_eligibility = release_eligibility
+    get_release_eligibility = release_eligibility
+    release_gate = release_eligibility
+
+    def verify_release(self, version: Any, **kwargs: Any) -> tuple[bool, str, dict[str, Any]]:
+        result = self.release_eligibility(version, **kwargs)
+        return bool(result["eligible"]), str(result["message"]), result
+
+    check_release = verify_release
+    can_release = verify_release
+
+    def release_page(self, version: Any, **kwargs: Any) -> dict[str, Any]:
+        return self._desk().release_page(version, **kwargs)
+
+    def try_set_effective(self, version: Any) -> tuple[dict[str, Any] | None, str]:
+        """核验通过后才把版本置为已生效；不通过时返回阻断原因。"""
+        token = self._version_token(version) if not isinstance(version, str) else version
+        vrow = self._desk().resolve_version(token)
+        if vrow is None:
+            return None, f"转写版本 {version} 不存在"
+        ok, message, eligibility = self.verify_release(vrow.get("版本号"))
+        if not ok:
+            return None, f"版本 {vrow.get('版本号')} 不能生效：{message}"
+        vrow["status"] = "已生效"
+        vrow["pending"] = False
+        vrow["生效时间"] = "2026-11-26 18:00"
+        return vrow, f"版本 {vrow.get('版本号')} 核验通过并已生效"
+
+    def run_action(
+        self, entry_id: int, action: str, **kwargs: Any,
+    ) -> tuple[dict[str, Any] | None, str]:
+        # “生效版本”前嵌入发布资格核验：仅当工作台能看到该版本的明确覆盖时
+        # 才阻断，避免对没有分段数据的版本造成误伤。
+        if action == "生效版本":
+            entry = store.find(self.MODULE, entry_id)
+            if entry is not None:
+                desk = self._desk()
+                eligibility = desk.release_eligibility(entry.get("版本号"))
+                if eligibility.get("coverage_count", 0) > 0 and not eligibility.get("eligible"):
+                    return None, (
+                        f"版本 {entry.get('版本号')} 发布资格核验未通过："
+                        f"{eligibility.get('message')}"
+                    )
+        return super().run_action(entry_id, action)
